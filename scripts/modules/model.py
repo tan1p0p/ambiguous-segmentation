@@ -6,16 +6,18 @@ class SegNet(nn.Module):
     def __init__(self):
         super(SegNet, self).__init__()
         self.maxpool = nn.MaxPool2d(2)
+        self.upsample = nn.UpsamplingBilinear2d(scale_factor=2)
 
-        self.conv1 = nn.Conv2d(3, 64, 3)
-        self.conv2 = nn.Conv2d(64, 128, 3)
-        self.conv3 = nn.Conv2d(128, 256, 3)
-        self.conv4 = nn.Conv2d(256, 512, 3)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=True)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=True)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=True)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1, bias=True)
 
-        self.deconv1 = nn.Conv2d(512, 256, 3)
-        self.deconv2 = nn.Conv2d(256, 128, 3)
-        self.deconv3 = nn.Conv2d(128, 64, 3)
-        self.deconv4 = nn.Conv2d(64, 3, 3)
+        self.deconv1 = nn.ConvTranspose2d(512, 256, kernel_size=3, stride=1, padding=1, bias=True)
+        self.deconv2 = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=1, padding=1, bias=True)
+        self.deconv3 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=1, padding=1, bias=True)
+        self.deconv4 = nn.ConvTranspose2d(64, 1, kernel_size=3, stride=1, padding=1, bias=True)
+        self.batch_norm = nn.BatchNorm2d(1)
 
     def forward(self, input):
         x = self.maxpool(F.relu(self.conv1(input)))
@@ -23,12 +25,13 @@ class SegNet(nn.Module):
         x = self.maxpool(F.relu(self.conv3(x)))
         x = self.maxpool(F.relu(self.conv4(x)))
 
-        x = self.maxpool(F.relu(self.deconv1(x)))
-        x = self.maxpool(F.relu(self.deconv2(x)))
-        x = self.maxpool(F.relu(self.deconv3(x)))
-        x = self.maxpool(F.relu(self.deconv4(x)))
+        x = F.relu(self.deconv1(self.upsample(x)))
+        x = F.relu(self.deconv2(self.upsample(x)))
+        x = F.relu(self.deconv3(self.upsample(x)))
+        x = self.batch_norm(self.deconv4(self.upsample(x)))
+        x = F.softmax(x, dim=1)
 
-        return F.softmax(x)
+        return x
 
 class DeepImageMatting(nn.Module):
     def __init__(self, stage):

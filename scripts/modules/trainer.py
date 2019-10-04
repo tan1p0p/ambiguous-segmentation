@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import torch
+import torch.nn as nn
 torch.manual_seed(0)
 
 from modules.model import SegNet, DeepImageMatting
@@ -49,6 +50,17 @@ class Trainer():
 
     def optimize(self):
         for i in range(self.iter_num):
-            for batch_data in enumerate(self.train_dataloader):
-                print(batch_data)
-                exit()
+            for X, t in tqdm(self.train_dataloader, postfix='{}/{}'.format(i, self.iter_num)):
+                X = X.to(self.device).type(self.data_type)
+                t = t.to(self.device).type(self.data_type)
+
+                self.optimizer.zero_grad()
+
+                upsample = nn.UpsamplingBilinear2d(scale_factor=4)
+                maxpool = nn.MaxPool2d(4)
+
+                y1 = self.trimap_stage(X)
+                concat = torch.cat((y1, X), dim=1)
+                y2, _ = self.matting_stage(upsample(concat))
+                loss = self.loss_func(maxpool(y2), t)
+                loss.backward()
