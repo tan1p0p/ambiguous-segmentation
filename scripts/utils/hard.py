@@ -1,6 +1,6 @@
 import torch
 
-def get_devise():
+def get_device():
     if torch.cuda.is_available():
         device = 'cuda'
         data_type = torch.cuda.FloatTensor

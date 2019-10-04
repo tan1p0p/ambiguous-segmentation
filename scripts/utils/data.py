@@ -1,5 +1,6 @@
 import glob
 import os
+import random
 
 import torch
 from torchvision import transforms, datasets
@@ -8,7 +9,7 @@ from PIL import Image
 from utils.hard import get_device
 
 class TrimapDataset(torch.utils.data.Dataset):
-    def __init__(self, fg_root_dir, device, data_type, scale=80):
+    def __init__(self, fg_root_dir, scale=80):
         self.fg_root_dir = fg_root_dir
         self.scale = scale
 
@@ -22,11 +23,10 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __init_dir_path(self):
         self.fg_dir = os.path.join(self.fg_root_dir, 'origin')
         self.alpha_dir = os.path.join(self.fg_root_dir, 'gt')
-        self.bg_dir = '/home/hassaku/dataset/VOCdevkit/VOC2007/JPEGImages/'
+        self.bg_dir = '/home/hassaku/dataset/mscoco/train2014/'
 
     def __init_images(self):
-        # self.data_num = len(glob.glob(os.path.join(self.fg_dir, '*')))
-        self.data_num = 10
+        self.data_num = len(glob.glob(os.path.join(self.fg_dir, '*')))
         self.__load_portraits()
         self.__load_bgs()
         self.__pile_images()
@@ -37,7 +37,6 @@ class TrimapDataset(torch.utils.data.Dataset):
             transforms.ToTensor()
         ])
         self.fgs = self.__load_images(self.fg_dir, transform=transform)
-        self.data_num = len(self.fgs)
         self.alphas = self.__load_images(self.alpha_dir, gray=True, transform=transform)
         print('Portrait loaded.')
 
@@ -47,7 +46,7 @@ class TrimapDataset(torch.utils.data.Dataset):
             transforms.RandomCrop(self.scale),
             transforms.ToTensor()
         ])
-        self.bgs = self.__load_images(self.bg_dir, transform=transform)
+        self.bgs = self.__load_images(self.bg_dir, transform=transform, sample_num=self.data_num)
         print('BG loaded.')
 
     def __pile_images(self):
@@ -57,8 +56,10 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __pile_one_image(self, fg, bg, alpha):
         return fg * alpha + bg * (1 - alpha)
 
-    def __load_images(self, dir_path, gray=False, transform=None):
-        path_list = glob.glob(os.path.join(dir_path, '*'))[:self.data_num]
+    def __load_images(self, dir_path, gray=False, transform=None, sample_num=None):
+        path_list = glob.glob(os.path.join(dir_path, '*'))[:10]
+        if sample_num:
+            path_list = random.sample(path_list, sample_num)
 
         img_list = []
         for filepath in path_list:

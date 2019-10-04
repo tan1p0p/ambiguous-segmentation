@@ -1,3 +1,5 @@
 {
-    "data_dir": "/home/hassaku/research/trimap-genaration/person-matting-dataset/80x80/"
+    "data_dir": "/home/hassaku/research/trimap-genaration/person-matting-dataset/80x80/",
+    "output_path": "outputs/",
+    "epochs": 501
 }

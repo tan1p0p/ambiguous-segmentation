@@ -133,7 +133,7 @@ class DeepImageMatting(nn.Module):
 
         # Should add sigmoid? github repo add so.
         raw_alpha = self.deconv1(x12d)
-        pred_mattes = F.sigmoid(raw_alpha)
+        pred_mattes = torch.sigmoid(raw_alpha)
 
         if self.stage <= 1:
             return pred_mattes, 0
@@ -145,10 +145,10 @@ class DeepImageMatting(nn.Module):
         refine3 = F.relu(self.refine_conv3(refine2))
         # Should add sigmoid?
         # sigmoid lead to refine result all converge to 0... 
-        #pred_refine = F.sigmoid(self.refine_pred(refine3))
+        #pred_refine = torch.sigmoid(self.refine_pred(refine3))
         pred_refine = self.refine_pred(refine3)
 
-        pred_alpha = F.sigmoid(raw_alpha + pred_refine)
+        pred_alpha = torch.sigmoid(raw_alpha + pred_refine)
 
         #print(pred_mattes.mean(), pred_alpha.mean(), pred_refine.sum())
 
