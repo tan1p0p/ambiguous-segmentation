@@ -9,12 +9,13 @@ from utils.data import get_dataloader
 from utils.hard import get_device
 
 class Trainer():
-    def __init__(self, data_dir, output_path, epochs):
+    def __init__(self, data_dir, output_path, epochs, is_file_saved=True):
         self.train_dir = data_dir + 'train'
         self.test_dir = data_dir + 'test'
         self.matting_weight_path = '/home/hassaku/research/ambiguous-segmentation/models/stage1_sad_54.4.pth'
         self.output_path = output_path
         self.iter_num = epochs
+        self.is_file_saved = is_file_saved
 
         self.__init_device()
         self.__init_dataloader()
@@ -45,12 +46,19 @@ class Trainer():
         self.optimizer = torch.optim.Adam(params)
 
     def __init_losses(self):
-        self.current_loss = 0
+        self.current_loss = 1
         self.loss_func = Loss()
 
     def optimize(self):
         for epoch in range(self.iter_num):
-            for pile, fg, bg in tqdm(self.train_dataloader, postfix='{}/{} Loss: {:05f}'.format(epoch, self.iter_num, self.current_loss)):
+            for pile, fg, bg in tqdm(
+                self.train_dataloader,
+                postfix='{}/{} Loss: {:05f}'.format(epoch, self.iter_num, self.current_loss)):
+
+                pile = pile.to(self.device).type(self.data_type)
+                fg = fg.to(self.device).type(self.data_type)
+                bg = bg.to(self.device).type(self.data_type)
+
                 upsample = nn.UpsamplingBilinear2d(scale_factor=4)
                 maxpool = nn.MaxPool2d(4)
                 pred_trimap = self.trimap_stage(pile)
@@ -64,5 +72,5 @@ class Trainer():
                 loss.backward()
                 self.optimizer.step()
 
-            if epoch % 10 == 0:
+            if self.is_file_saved and epoch % 10 == 0:
                 torch.save(self.trimap_stage.state_dict(), self.output_path + 'trimap_{:04d}.model'.format(epoch))

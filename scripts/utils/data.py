@@ -4,6 +4,7 @@ import random
 
 import torch
 from torchvision import transforms, datasets
+from tqdm import tqdm
 from PIL import Image
 
 from utils.hard import get_device
@@ -23,7 +24,7 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __init_dir_path(self):
         self.fg_dir = os.path.join(self.fg_root_dir, 'origin')
         self.alpha_dir = os.path.join(self.fg_root_dir, 'gt')
-        self.bg_dir = '/home/hassaku/dataset/mscoco/train2014/'
+        self.bg_dir = '/home/hassaku/dataset/mscoco/train2014_mini/'
 
     def __init_images(self):
         self.data_num = len(glob.glob(os.path.join(self.fg_dir, '*')))
@@ -50,25 +51,30 @@ class TrimapDataset(torch.utils.data.Dataset):
         print('BG loaded.')
 
     def __pile_images(self):
-        self.piles = [self.__pile_one_image(fg, bg, alpha) for fg, bg, alpha in zip(self.fgs, self.bgs, self.alphas)]
+        self.piles = []
+        for fg, bg, alpha in tqdm(zip(self.fgs, self.bgs, self.alphas)):
+            self.piles.append(self.__pile_one_image(fg, bg, alpha))
         print('Finish piling.')
 
     def __pile_one_image(self, fg, bg, alpha):
         return fg * alpha + bg * (1 - alpha)
 
     def __load_images(self, dir_path, gray=False, transform=None, sample_num=None):
-        path_list = glob.glob(os.path.join(dir_path, '*'))[:10]
-        if sample_num:
-            path_list = random.sample(path_list, sample_num)
+        path_list = glob.glob(os.path.join(dir_path, '*'))
+        if sample_num and sample_num <= len(path_list):
+            path_list = random.sample(path_list, k=sample_num)
 
         img_list = []
-        for filepath in path_list:
+        for filepath in tqdm(path_list):
             img = Image.open(filepath)
             if gray:
                 img = img.convert('L')
             if transform:
                 img = transform(img)
-            img_list.append(img.to(self.device).type(self.data_type))
+            img_list.append(img)
+
+        if sample_num and sample_num > len(path_list):
+            img_list = random.choices(img_list, k=sample_num)
         return img_list
 
     def __len__(self):
