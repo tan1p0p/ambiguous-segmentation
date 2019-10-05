@@ -10,8 +10,9 @@ from PIL import Image
 from utils.hard import get_device
 
 class TrimapDataset(torch.utils.data.Dataset):
-    def __init__(self, fg_root_dir, scale=80):
+    def __init__(self, fg_root_dir, bg_dir, scale=80):
         self.fg_root_dir = fg_root_dir
+        self.bg_dir = bg_dir
         self.scale = scale
 
         self.__init_device()
@@ -24,7 +25,6 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __init_dir_path(self):
         self.fg_dir = os.path.join(self.fg_root_dir, 'origin')
         self.alpha_dir = os.path.join(self.fg_root_dir, 'gt')
-        self.bg_dir = '/home/hassaku/dataset/mscoco/train2014_mini/'
 
     def __init_images(self):
         self.data_num = len(glob.glob(os.path.join(self.fg_dir, '*')))
@@ -89,12 +89,12 @@ class TrimapDataset(torch.utils.data.Dataset):
         # ])
         return self.piles[idx], self.fgs[idx], self.bgs[idx]
 
-def get_dataloader(data_dir, batch_size=32, scale=80):
-    dataset = TrimapDataset(data_dir, scale)
+def get_dataloader(data_dir, bg_dir, batch_size=32, scale=80):
+    dataset = TrimapDataset(data_dir, bg_dir, scale=scale)
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 if __name__ == "__main__":
-    dataset = get_dataloader('./data/96x64/train/')
+    dataset = get_dataloader('./data/96x64/train/', '/home/hassaku/dataset/mscoco/train2014_mini/')
     for pile, fg, bg in dataset:
         print(pile.shape, fg.shape, bg.shape)
         break

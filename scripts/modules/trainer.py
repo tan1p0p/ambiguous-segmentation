@@ -9,10 +9,11 @@ from utils.data import get_dataloader
 from utils.hard import get_device
 
 class Trainer():
-    def __init__(self, data_dir, output_path, epochs, is_file_saved=True):
-        self.train_dir = data_dir + 'train'
-        self.test_dir = data_dir + 'test'
-        self.matting_weight_path = '/home/hassaku/research/ambiguous-segmentation/models/stage1_sad_54.4.pth'
+    def __init__(self, portrait_dir, bg_dir, output_path, epochs, matting_model, is_file_saved=True):
+        self.train_dir = portrait_dir + 'train'
+        self.test_dir = portrait_dir + 'test'
+        self.bg_dir = bg_dir
+        self.matting_weight_path = matting_model
         self.output_path = output_path
         self.iter_num = epochs
         self.is_file_saved = is_file_saved
@@ -27,9 +28,9 @@ class Trainer():
         self.device, self.data_type = get_device()
 
     def __init_dataloader(self):
-        self.train_dataloader = get_dataloader(self.train_dir)
+        self.train_dataloader = get_dataloader(self.train_dir, self.bg_dir)
         print('Train images loaded.')
-        self.test_dataloader = get_dataloader(self.test_dir)
+        self.test_dataloader = get_dataloader(self.test_dir, self.bg_dir)
         print('Test images loaded.')
 
     def __init_nets(self):

@@ -10,8 +10,7 @@ if __name__ == "__main__":
     config["output_path"] += "{:%Y-%m-%d_%H:%M}/".format(datetime.datetime.now())
 
     args = argment_handler()
-    if args.no_write:
-        config['is_file_saved'] = not args.no_write
+    config['is_file_saved'] = not args.no_write
 
     if config['is_file_saved']:
         os.mkdir(config["output_path"])
