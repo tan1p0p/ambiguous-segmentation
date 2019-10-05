@@ -1,0 +1,7 @@
+{
+    "portrait_dir":  "/data/hassaku/person_image_dataset/96x64",
+    "bg_dir":        "/data/hassaku/test2017",
+    "matting_model": "/home/s1511526/ambiguous-segmentation/models/stage1_sad_57.1.pth",
+    "output_path":   "./outputs/",
+    "epochs":        501
+}
