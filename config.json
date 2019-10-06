@@ -1,7 +1,7 @@
 {
-    "portrait_dir":  "/home/hassaku/research/trimap-genaration/person-matting-dataset/80x80/",
-    "bg_dir":        "/home/hassaku/dataset/mscoco/train2014_mini/",
-    "matting_model": "/home/hassaku/research/ambiguous-segmentation/models/stage1_sad_54.4.pth",
-    "output_path":   "./outputs/",
+    "portrait_dir":  "data/portrait-matting-datset/96x64/",
+    "bg_dir":        "data/MSCOCO/test2017_mini/",
+    "matting_model": "models/stage1_sad_54.4.pth",
+    "output_path":   "outputs/",
     "epochs":        501
 }
