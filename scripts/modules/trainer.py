@@ -1,3 +1,5 @@
+from statistics import mean
+
 from tqdm import tqdm
 import torch
 import torch.nn as nn
@@ -7,6 +9,7 @@ from modules.loss import Loss
 from modules.model import SegNet, DeepImageMatting
 from utils.data import get_dataloader
 from utils.hard import get_device
+from utils.visualize import save_line
 
 class Trainer():
     def __init__(self, portrait_dir, bg_dir, output_path, epochs, matting_model, is_file_saved=True):
@@ -47,11 +50,13 @@ class Trainer():
         self.optimizer = torch.optim.Adam(params)
 
     def __init_losses(self):
+        self.train_loss, self.test_loss = [], []
         self.current_loss = 1
         self.loss_func = Loss()
 
     def optimize(self):
         for epoch in range(self.iter_num):
+            epoch_train_loss, epoch_test_loss = [], []
             for pile, fg, bg in tqdm(
                 self.train_dataloader,
                 postfix='{}/{} Loss: {:05f}'.format(epoch, self.iter_num, self.current_loss)):
@@ -67,11 +72,30 @@ class Trainer():
                 pred_alpha, _ = self.matting_stage(upsample(concat))
 
                 loss = self.loss_func(maxpool(pred_alpha), fg, bg, pile)
-                self.current_loss = loss.item()
 
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                epoch_train_loss.append(loss.item())
+
+            for pile, fg, bg in self.test_dataloader:
+                pile = pile.to(self.device).type(self.data_type)
+                fg = fg.to(self.device).type(self.data_type)
+                bg = bg.to(self.device).type(self.data_type)
+
+                upsample = nn.UpsamplingBilinear2d(scale_factor=4)
+                maxpool = nn.MaxPool2d(4)
+                pred_trimap = self.trimap_stage(pile)
+                concat = torch.cat((pred_trimap, pile), dim=1)
+                pred_alpha, _ = self.matting_stage(upsample(concat))
+
+                loss = self.loss_func(maxpool(pred_alpha), fg, bg, pile)
+                epoch_test_loss.append(loss.item())
+
+            self.train_loss.append(mean(epoch_train_loss))
+            self.test_loss.append(mena(epoch_test_loss))
+            self.current_loss = self.train_loss[-1]
 
             if self.is_file_saved and epoch % 10 == 0:
+                save_line((self.train_loss, self.test_loss), 'loss_{:04d}'.format(epoch), self.output_path)
                 torch.save(self.trimap_stage.state_dict(), self.output_path + 'trimap_{:04d}.model'.format(epoch))
