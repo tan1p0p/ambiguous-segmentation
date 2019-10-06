@@ -28,9 +28,9 @@ class Trainer():
         self.device, self.data_type = get_device()
 
     def __init_dataloader(self):
-        self.train_dataloader = get_dataloader(self.train_dir, self.bg_dir)
+        self.train_dataloader = get_dataloader(self.train_dir, self.bg_dir, batch_size=10)
         print('Train images loaded.')
-        self.test_dataloader = get_dataloader(self.test_dir, self.bg_dir)
+        self.test_dataloader = get_dataloader(self.test_dir, self.bg_dir, batch_size=10)
         print('Test images loaded.')
 
     def __init_nets(self):

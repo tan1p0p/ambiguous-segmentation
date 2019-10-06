@@ -69,6 +69,9 @@ class TrimapDataset(torch.utils.data.Dataset):
             img = Image.open(filepath)
             if gray:
                 img = img.convert('L')
+            else:
+                img = img.convert('RGB')
+
             if transform:
                 img = transform(img)
             img_list.append(img)
