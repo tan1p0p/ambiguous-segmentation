@@ -6,7 +6,7 @@ from modules.trainer import Trainer
 from utils.argument_handler import argment_handler
 
 if __name__ == "__main__":
-    config = json.load(open('config_mini.json', 'r'))
+    config = json.load(open('config.json', 'r'))
     config["output_path"] += "{:%Y-%m-%d_%H:%M}/".format(datetime.datetime.now())
 
     args = argment_handler()

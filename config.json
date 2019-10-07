@@ -1,7 +1,10 @@
 {
-    "portrait_dir":  "/data/hassaku/person_image_dataset/96x64",
-    "bg_dir":        "/data/hassaku/test2017",
-    "matting_model": "/home/s1511526/ambiguous-segmentation/models/stage1_sad_57.1.pth",
-    "output_path":   "./outputs/",
-    "epochs":        501
+    "portrait_dir":   "./data/person_image_dataset/96x64/",
+    "bg_dir":         "./data/MSCOCO/test2017_mini/",
+    "matting_model":  "./models/stage1_sad_54.4.pth",
+    "output_path":    "./outputs/",
+    "epochs":         501,
+    "batch_size":     16,
+    "train_data_num": 20000,
+    "test_data_num":  500
 }

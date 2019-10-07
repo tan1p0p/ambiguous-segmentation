@@ -10,9 +10,10 @@ from PIL import Image
 from utils.hard import get_device
 
 class TrimapDataset(torch.utils.data.Dataset):
-    def __init__(self, fg_root_dir, bg_dir, scale=80):
+    def __init__(self, fg_root_dir, bg_dir, data_num, scale=80):
         self.fg_root_dir = fg_root_dir
         self.bg_dir = bg_dir
+        self.data_num = data_num
         self.scale = scale
 
         self.__init_device()
@@ -27,7 +28,6 @@ class TrimapDataset(torch.utils.data.Dataset):
         self.alpha_dir = os.path.join(self.fg_root_dir, 'gt')
 
     def __init_images(self):
-        self.data_num = len(glob.glob(os.path.join(self.fg_dir, '*')))
         self.__load_portraits()
         self.__load_bgs()
         self.__pile_images()
@@ -37,8 +37,9 @@ class TrimapDataset(torch.utils.data.Dataset):
             transforms.Resize((self.scale, self.scale)),
             transforms.ToTensor()
         ])
-        self.fgs = self.__load_images(self.fg_dir, transform=transform)
-        self.alphas = self.__load_images(self.alpha_dir, gray=True, transform=transform)
+        photo_list, alpha_list = self.__get_samples()
+        self.fgs = self.__load_images(photo_list, transform=transform)
+        self.alphas = self.__load_images(alpha_list, gray=True, transform=transform)
         print('Portrait loaded.')
 
     def __load_bgs(self):
@@ -47,7 +48,8 @@ class TrimapDataset(torch.utils.data.Dataset):
             transforms.RandomCrop(self.scale),
             transforms.ToTensor()
         ])
-        self.bgs = self.__load_images(self.bg_dir, transform=transform, sample_num=self.data_num)
+        bg_list = random.choices(glob.glob(os.path.join(self.bg_dir, '*')), k=self.data_num)
+        self.bgs = self.__load_images(bg_list, transform=transform)
         print('BG loaded.')
 
     def __pile_images(self):
@@ -59,11 +61,13 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __pile_one_image(self, fg, bg, alpha):
         return fg * alpha + bg * (1 - alpha)
 
-    def __load_images(self, dir_path, gray=False, transform=None, sample_num=None):
-        path_list = glob.glob(os.path.join(dir_path, '*'))
-        if sample_num and sample_num <= len(path_list):
-            path_list = random.sample(path_list, k=sample_num)
+    def __get_samples(self):
+        photo_list = glob.glob(os.path.join(self.fg_root_dir, 'origin', '*'))
+        photo_sample = random.sample(photo_list, k=self.data_num)
+        alpha_sample = [path.replace('origin', 'gt') for path in photo_sample]
+        return photo_sample, alpha_sample
 
+    def __load_images(self, path_list, gray=False, transform=None):
         img_list = []
         for filepath in tqdm(path_list):
             img = Image.open(filepath)
@@ -75,9 +79,6 @@ class TrimapDataset(torch.utils.data.Dataset):
             if transform:
                 img = transform(img)
             img_list.append(img)
-
-        if sample_num and sample_num > len(path_list):
-            img_list = random.choices(img_list, k=sample_num)
         return img_list
 
     def __len__(self):
@@ -90,10 +91,10 @@ class TrimapDataset(torch.utils.data.Dataset):
         #         mean = [0.485, 0.456, 0.406],
         #         std = [0.229, 0.224, 0.225])
         # ])
-        return self.piles[idx], self.fgs[idx], self.bgs[idx]
+        return self.piles[idx], self.fgs[idx], self.bgs[idx], self.alphas[idx]
 
-def get_dataloader(data_dir, bg_dir, batch_size=32, scale=80):
-    dataset = TrimapDataset(data_dir, bg_dir, scale=scale)
+def get_dataloader(data_dir, bg_dir, data_num, batch_size=32, scale=80):
+    dataset = TrimapDataset(data_dir, bg_dir, data_num=data_num, scale=scale)
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 if __name__ == "__main__":
