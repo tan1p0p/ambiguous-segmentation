@@ -1,10 +1,16 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from utils.hard import get_device
+
 class SegNet(nn.Module):
     def __init__(self):
         super(SegNet, self).__init__()
+        _, self.data_type = get_device()
+
+        self.dropout = nn.Dropout2d(0.3)
         self.maxpool = nn.MaxPool2d(2)
         self.upsample = nn.UpsamplingBilinear2d(scale_factor=2)
 
@@ -16,28 +22,35 @@ class SegNet(nn.Module):
         self.deconv1 = nn.ConvTranspose2d(512, 256, kernel_size=3, stride=1, padding=1, bias=True)
         self.deconv2 = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=1, padding=1, bias=True)
         self.deconv3 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=1, padding=1, bias=True)
-        self.deconv4 = nn.ConvTranspose2d(64, 1, kernel_size=3, stride=1, padding=1, bias=True)
-        self.batch_norm = nn.BatchNorm2d(1)
+        self.deconv4 = nn.ConvTranspose2d(64, 3, kernel_size=3, stride=1, padding=1, bias=True)
+        self.batch_norm = nn.BatchNorm2d(3)
+
+        self.threshold = nn.Threshold(0.5, 0)
 
     def forward(self, input):
-        x = self.maxpool(F.relu(self.conv1(input)))
-        x = self.maxpool(F.relu(self.conv2(x)))
-        x = self.maxpool(F.relu(self.conv3(x)))
-        x = self.maxpool(F.relu(self.conv4(x)))
+        x = self.maxpool(F.relu(self.dropout(self.conv1(input))))
+        x = self.maxpool(F.relu(self.dropout(self.conv2(x))))
+        x = self.maxpool(F.relu(self.dropout(self.conv3(x))))
+        x = self.maxpool(F.relu(self.dropout(self.conv4(x))))
 
         x = F.relu(self.deconv1(self.upsample(x)))
         x = F.relu(self.deconv2(self.upsample(x)))
         x = F.relu(self.deconv3(self.upsample(x)))
         x = self.batch_norm(self.deconv4(self.upsample(x)))
         x = F.softmax(x, dim=1)
+        x = self.threshold(x)
 
+        consts = torch.Tensor(
+            np.mod(np.arange(input.shape[0] * 3 * 80 * 80), 3).reshape((-1, 80, 80, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
+        x = torch.sum(x * consts, dim=1)
+        x = x.view(-1, 1, 80, 80)
         return x
 
 class DeepImageMatting(nn.Module):
     def __init__(self, stage):
         super(DeepImageMatting, self).__init__()
         self.stage = stage
-        
+
         self.conv1_1 = nn.Conv2d(4, 64, kernel_size=3, stride=1, padding=1, bias=True)
         self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=True)
         self.conv2_1 = nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=True)
@@ -55,14 +68,14 @@ class DeepImageMatting(nn.Module):
         # model released before 2019.09.09 should use kernel_size=1 & padding=0
         #self.conv6_1 = nn.Conv2d(512, 512, kernel_size=1, padding=0,bias=True)
         self.conv6_1 = nn.Conv2d(512, 512, kernel_size=3, padding=1, bias=True)
-        
+
         self.deconv6_1 = nn.Conv2d(512, 512, kernel_size=1, bias=True)
         self.deconv5_1 = nn.Conv2d(512, 512, kernel_size=5, padding=2, bias=True)
         self.deconv4_1 = nn.Conv2d(512, 256, kernel_size=5, padding=2, bias=True)
         self.deconv3_1 = nn.Conv2d(256, 128, kernel_size=5, padding=2, bias=True)
         self.deconv2_1 = nn.Conv2d(128, 64, kernel_size=5, padding=2, bias=True)
         self.deconv1_1 = nn.Conv2d(64, 64, kernel_size=5, padding=2, bias=True)
-        
+
         self.deconv1 = nn.Conv2d(64, 1, kernel_size=5, padding=2, bias=True)
 
         if self.stage == 2:

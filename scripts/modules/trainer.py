@@ -1,11 +1,13 @@
+import os
 from statistics import mean
 
+import cloudpickle
 from tqdm import tqdm
 import torch
 import torch.nn as nn
 torch.manual_seed(0)
 
-from modules.loss import Loss
+from modules.loss import AlphaMatteLoss, AmbiguousLoss
 from modules.model import SegNet, DeepImageMatting
 from utils.data import get_dataloader
 from utils.hard import get_device
@@ -30,6 +32,7 @@ class Trainer():
         self.__init_device()
         self.__init_dataloader()
         self.__init_nets()
+        self.__init_layers()
         self.__init_optim()
         self.__init_losses()
 
@@ -49,67 +52,83 @@ class Trainer():
         self.matting_stage = DeepImageMatting(stage=1).to(self.device).type(self.data_type)
         self.matting_stage.load_state_dict(torch.load(self.matting_weight_path)['state_dict'], strict=True)
         self.matting_stage.eval()
-        for param in self.trimap_stage.parameters():
-            param.requires_grad = False
         print('Model loaded.')
 
+    def __init_layers(self):
+        self.upsample = nn.UpsamplingBilinear2d(scale_factor=4)
+        self.maxpool = nn.MaxPool2d(4)
+
     def __init_optim(self):
-        params = list(self.trimap_stage.parameters()) + list(self.matting_stage.parameters())
+        for param in list(self.matting_stage.parameters()) + \
+            list(self.upsample.parameters()) + \
+            list(self.maxpool.parameters()):
+            param.requires_grad = False
+
+        params = list(self.trimap_stage.parameters()) + \
+            list(self.upsample.parameters()) + \
+            list(self.matting_stage.parameters()) + \
+            list(self.maxpool.parameters())
         self.optimizer = torch.optim.Adam(params)
 
     def __init_losses(self):
         self.train_loss, self.test_loss = [], []
         self.current_loss = 1
-        self.loss_func = Loss()
+        self.alpha_matte_loss_func = AlphaMatteLoss()
+        self.ambiguous_loss_func = AmbiguousLoss()
+        self.mse_loss_func = nn.MSELoss()
+
+    def __prediction(self, pile, calc_grad=True):
+        for param in list(self.trimap_stage.parameters()):
+            if calc_grad == True:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+        pred_trimap = self.trimap_stage(pile)
+        concat = torch.cat((pile, pred_trimap), dim=1)
+        pred_alpha_big, _ = self.matting_stage(self.upsample(concat))
+        return self.maxpool(pred_alpha_big), pred_trimap
+
+    def __fit(self, pile, fg, bg, alpha, trimap, calc_grad=True):
+        pile = pile.to(self.device).type(self.data_type)
+        fg = fg.to(self.device).type(self.data_type)
+        bg = bg.to(self.device).type(self.data_type)
+        alpha = alpha.to(self.device).type(self.data_type)
+        trimap = trimap.to(self.device).type(self.data_type)
+
+        pred_alpha, pred_trimap = self.__prediction(pile, calc_grad=calc_grad)
+
+        # calc losses
+        loss = self.alpha_matte_loss_func(pred_alpha, pred_trimap, fg, bg, pile) * 0.5
+        loss += self.mse_loss_func(pred_alpha, alpha) * 0.5
+        # loss += self.ambiguous_loss_func(pred_trimap) * 0.1
+        return loss
 
     def optimize(self):
         for epoch in range(self.iter_num):
             epoch_train_loss, epoch_test_loss = [], []
 
-            for pile, fg, bg, _ in tqdm(
+            for pile, fg, bg, alpha, trimap in tqdm(
                 self.train_dataloader,
                 postfix='{}/{} Loss: {:05f}'.format(epoch, self.iter_num, self.current_loss)):
 
-                pile = pile.to(self.device).type(self.data_type)
-                fg = fg.to(self.device).type(self.data_type)
-                bg = bg.to(self.device).type(self.data_type)
-
-                upsample = nn.UpsamplingBilinear2d(scale_factor=4)
-                maxpool = nn.MaxPool2d(4)
-                pred_trimap = self.trimap_stage(pile)
-                concat = torch.cat((pred_trimap, pile), dim=1)
-                pred_alpha, _ = self.matting_stage(upsample(concat))
-
-                loss = self.loss_func(maxpool(pred_alpha), fg, bg, pile)
-
+                loss = self.__fit(pile, fg, bg, alpha, trimap, calc_grad=True)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 epoch_train_loss.append(loss.item())
 
-            # for pile, fg, bg, _ in tqdm(self.test_dataloader):
-            #     pile = pile.to(self.device).type(self.data_type)
-            #     fg = fg.to(self.device).type(self.data_type)
-            #     bg = bg.to(self.device).type(self.data_type)
-
-            #     upsample = nn.UpsamplingBilinear2d(scale_factor=4)
-            #     maxpool = nn.MaxPool2d(4)
-
-            #     pred_trimap = self.trimap_stage(pile)
-            #     concat = torch.cat((pred_trimap, pile), dim=1)
-            #     print('b1', torch.cuda.memory_allocated())
-            #     pred_alpha, _ = self.matting_stage(upsample(concat))
-            #     print('b2', torch.cuda.memory_allocated())
-
-            #     loss = self.loss_func(maxpool(pred_alpha), fg, bg, pile)
-            #     epoch_test_loss.append(loss.item())
-            #     loss.backward() # TODO: delete grad without backward
-
-
             self.train_loss.append(mean(epoch_train_loss))
-            # self.test_loss.append(mean(epoch_test_loss))
             self.current_loss = self.train_loss[-1]
 
+            for pile, fg, bg, alpha, trimap in self.test_dataloader:
+                loss = self.__fit(pile, fg, bg, alpha, trimap, calc_grad=False)
+                epoch_test_loss.append(loss.item())
+
+            self.test_loss.append(mean(epoch_test_loss))
+
             if self.is_file_saved:
-                save_line([self.train_loss], title='loss_{:04d}'.format(epoch), output_dir=self.output_path)
-                torch.save(self.trimap_stage.state_dict(), self.output_path + 'trimap_{:04d}.model'.format(epoch))
+                save_line([self.train_loss, self.test_loss], title='loss_{:04d}'.format(epoch), output_dir=self.output_path)
+                with open(os.path.join(self.output_path, 'trimap_{:04d}.model'.format(epoch)), 'wb') as f:
+                    cloudpickle.dump(self.trimap_stage, f)
+                # torch.save(self.trimap_stage.state_dict(), self.output_path + 'trimap_{:04d}.model'.format(epoch))
