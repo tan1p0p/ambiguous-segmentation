@@ -6,9 +6,10 @@ import torch.nn.functional as F
 from utils.hard import get_device
 
 class SegNet(nn.Module):
-    def __init__(self):
+    def __init__(self, mode='joint'):
         super(SegNet, self).__init__()
         _, self.data_type = get_device()
+        self.mode = mode
 
         self.dropout = nn.Dropout2d(0.3)
         self.maxpool = nn.MaxPool2d(2)
@@ -38,12 +39,13 @@ class SegNet(nn.Module):
         x = F.relu(self.deconv3(self.upsample(x)))
         x = self.batch_norm(self.deconv4(self.upsample(x)))
         x = F.softmax(x, dim=1)
-        x = self.threshold(x)
 
-        consts = torch.Tensor(
-            np.mod(np.arange(input.shape[0] * 3 * 80 * 80), 3).reshape((-1, 80, 80, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
-        x = torch.sum(x * consts, dim=1)
-        x = x.view(-1, 1, 80, 80)
+        if self.mode == 'joint':
+            x = self.threshold(x)
+            consts = torch.Tensor(
+                np.mod(np.arange(input.shape[0] * 3 * 80 * 80), 3).reshape((-1, 80, 80, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
+            x = torch.sum(x * consts, dim=1)
+            x = x.view(-1, 1, 80, 80)
         return x
 
 class DeepImageMatting(nn.Module):

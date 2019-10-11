@@ -10,12 +10,13 @@ torch.manual_seed(0)
 from modules.loss import AlphaMatteLoss, AmbiguousLoss
 from modules.model import SegNet, DeepImageMatting
 from utils.data import get_dataloader
+from utils.image import to_one_hot_trimap
 from utils.hard import get_device
 from utils.visualize import save_line
 
 class Trainer():
     def __init__(self, portrait_dir, bg_dir, output_path, matting_model,
-        epochs, batch_size, train_data_num, test_data_num,
+        epochs, batch_size, train_data_num, test_data_num, mode,
         is_file_saved=True):
 
         self.train_dir = portrait_dir + 'train'
@@ -28,6 +29,7 @@ class Trainer():
         self.batch_size = batch_size
         self.train_data_num = train_data_num
         self.test_data_num = test_data_num
+        self.mode = mode
 
         self.__init_device()
         self.__init_dataloader()
@@ -38,6 +40,10 @@ class Trainer():
 
     def __init_device(self):
         self.device, self.data_type = get_device()
+        if self.device == 'cuda':
+            self.long_type = torch.cuda.LongTensor
+        else:
+            self.long_type = torch.LongTensor
 
     def __init_dataloader(self):
         self.train_dataloader = get_dataloader(self.train_dir, self.bg_dir,
@@ -48,7 +54,7 @@ class Trainer():
         print('Test images loaded.')
 
     def __init_nets(self):
-        self.trimap_stage = SegNet().to(self.device).type(self.data_type)
+        self.trimap_stage = SegNet(mode=self.mode).to(self.device).type(self.data_type)
         self.matting_stage = DeepImageMatting(stage=1).to(self.device).type(self.data_type)
         self.matting_stage.load_state_dict(torch.load(self.matting_weight_path)['state_dict'], strict=True)
         self.matting_stage.eval()
@@ -76,6 +82,7 @@ class Trainer():
         self.alpha_matte_loss_func = AlphaMatteLoss()
         self.ambiguous_loss_func = AmbiguousLoss()
         self.mse_loss_func = nn.MSELoss()
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
 
     def __prediction(self, pile, calc_grad=True):
         for param in list(self.trimap_stage.parameters()):
@@ -89,19 +96,36 @@ class Trainer():
         pred_alpha_big, _ = self.matting_stage(self.upsample(concat))
         return self.maxpool(pred_alpha_big), pred_trimap
 
-    def __fit(self, pile, fg, bg, alpha, trimap, calc_grad=True):
+    def __predict_trimap(self, pile, calc_grad=True):
+        for param in list(self.trimap_stage.parameters()):
+            if calc_grad == True:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+        pred_trimap = self.trimap_stage(pile)
+        return pred_trimap
+
+    def __fit_combined(self, pile, fg, bg, alpha, calc_grad=True):
         pile = pile.to(self.device).type(self.data_type)
         fg = fg.to(self.device).type(self.data_type)
         bg = bg.to(self.device).type(self.data_type)
         alpha = alpha.to(self.device).type(self.data_type)
-        trimap = trimap.to(self.device).type(self.data_type)
 
         pred_alpha, pred_trimap = self.__prediction(pile, calc_grad=calc_grad)
 
-        # calc losses
         loss = self.alpha_matte_loss_func(pred_alpha, pred_trimap, fg, bg, pile) * 0.5
         loss += self.mse_loss_func(pred_alpha, alpha) * 0.5
         # loss += self.ambiguous_loss_func(pred_trimap) * 0.1
+        return loss
+
+    def __fit_trimap(self, pile, trimap, calc_grad=True):
+        pile = pile.to(self.device).type(self.data_type)
+        trimap = to_one_hot_trimap(trimap).to(self.device).type(self.long_type)
+
+        pred_trimap = self.__predict_trimap(pile, calc_grad=calc_grad)
+
+        loss = self.cross_entropy_loss(pred_trimap, trimap)
         return loss
 
     def optimize(self):
@@ -112,7 +136,13 @@ class Trainer():
                 self.train_dataloader,
                 postfix='{}/{} Loss: {:05f}'.format(epoch, self.iter_num, self.current_loss)):
 
-                loss = self.__fit(pile, fg, bg, alpha, trimap, calc_grad=True)
+                if self.mode == 'combined':
+                    loss = self.__fit_combined(pile, fg, bg, alpha, calc_grad=True)
+                elif self.mode == 'only_trimap':
+                    loss = self.__fit_trimap(pile, trimap, calc_grad=True)
+                else:
+                    raise RuntimeError('wrong mode.')
+
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -122,7 +152,13 @@ class Trainer():
             self.current_loss = self.train_loss[-1]
 
             for pile, fg, bg, alpha, trimap in self.test_dataloader:
-                loss = self.__fit(pile, fg, bg, alpha, trimap, calc_grad=False)
+                if self.mode == 'combined':
+                    loss = self.__fit_combined(pile, fg, bg, alpha, calc_grad=True)
+                elif self.mode == 'only_trimap':
+                    loss = self.__fit_trimap(pile, trimap, calc_grad=True)
+                else:
+                    raise RuntimeError('wrong mode.')
+
                 epoch_test_loss.append(loss.item())
 
             self.test_loss.append(mean(epoch_test_loss))
