@@ -6,13 +6,14 @@ import torch.nn.functional as F
 from utils.hard import get_device
 
 class SegNet(nn.Module):
-    def __init__(self, mode='joint'):
+    def __init__(self, mode='combined', activate=None):
         super(SegNet, self).__init__()
         _, self.data_type = get_device()
         self.mode = mode
+        self.activate = activate
 
         self.dropout = nn.Dropout2d(0.3)
-        self.maxpool = nn.MaxPool2d(2)
+        self.maxpool2d = nn.MaxPool2d(2)
         self.upsample = nn.UpsamplingBilinear2d(scale_factor=2)
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=True)
@@ -26,26 +27,42 @@ class SegNet(nn.Module):
         self.deconv4 = nn.ConvTranspose2d(64, 3, kernel_size=3, stride=1, padding=1, bias=True)
         self.batch_norm = nn.BatchNorm2d(3)
 
-        self.threshold = nn.Threshold(0.5, 0)
+        self.threshold1 = nn.Threshold(0.25, 0)
+        self.threshold2 = nn.Threshold(0.5, 0)
+        self.threshold3 = nn.Threshold(0.75, 0)
+        self.maxpool1d = nn.MaxPool1d(3, stride=2, return_indices=True)
 
     def forward(self, input):
-        x = self.maxpool(F.relu(self.dropout(self.conv1(input))))
-        x = self.maxpool(F.relu(self.dropout(self.conv2(x))))
-        x = self.maxpool(F.relu(self.dropout(self.conv3(x))))
-        x = self.maxpool(F.relu(self.dropout(self.conv4(x))))
+        x = self.maxpool2d(F.relu(self.dropout(self.conv1(input))))
+        x = self.maxpool2d(F.relu(self.dropout(self.conv2(x))))
+        x = self.maxpool2d(F.relu(self.dropout(self.conv3(x))))
+        x = self.maxpool2d(F.relu(self.dropout(self.conv4(x))))
 
         x = F.relu(self.deconv1(self.upsample(x)))
         x = F.relu(self.deconv2(self.upsample(x)))
         x = F.relu(self.deconv3(self.upsample(x)))
-        x = self.batch_norm(self.deconv4(self.upsample(x)))
-        x = F.softmax(x, dim=1)
+        x = self.deconv4(self.upsample(x))
+        x = F.softmax(self.batch_norm(x), dim=1)
 
-        if self.mode == 'joint':
-            x = self.threshold(x)
+        if self.mode == 'combined':
+            if self.activate == '1dmaxpool':
+                output_shape = x.shape
+
+                x = x.view(x.shape[0], 3, -1).transpose(1, 2)
+                _, indeces = self.maxpool1d(x)
+                indeces = indeces.squeeze()
+
+                one_hot = torch.eye(3)[indeces].cuda()
+                prob_hot = (one_hot * x).transpose(1, 2).view(output_shape)
+
+            elif self.activate == 'thredhold':
+                prob_hot = (self.threshold1(x) + self.threshold2(x) + self.threshold3(x)) / 3
+
             consts = torch.Tensor(
                 np.mod(np.arange(input.shape[0] * 3 * 80 * 80), 3).reshape((-1, 80, 80, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
-            x = torch.sum(x * consts, dim=1)
+            x = torch.sum(prob_hot * consts, dim=1)
             x = x.view(-1, 1, 80, 80)
+
         return x
 
 class DeepImageMatting(nn.Module):

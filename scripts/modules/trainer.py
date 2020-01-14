@@ -2,6 +2,7 @@ import os
 from statistics import mean
 
 import cloudpickle
+from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import torch
 import torch.nn as nn
@@ -16,7 +17,7 @@ from utils.visualize import save_line
 
 class Trainer():
     def __init__(self, portrait_dir, bg_dir, output_path, matting_model,
-        epochs, batch_size, train_data_num, test_data_num, mode,
+        epochs, batch_size, train_data_num, test_data_num, mode, activate,
         is_file_saved=True):
 
         self.train_dir = portrait_dir + 'train'
@@ -30,6 +31,9 @@ class Trainer():
         self.train_data_num = train_data_num
         self.test_data_num = test_data_num
         self.mode = mode
+        self.activate = activate
+        if is_file_saved:
+            self.writer = SummaryWriter(output_path)
 
         self.__init_device()
         self.__init_dataloader()
@@ -50,11 +54,11 @@ class Trainer():
             batch_size=self.batch_size, data_num=self.train_data_num)
         print('Train images loaded.')
         self.test_dataloader = get_dataloader(self.test_dir, self.bg_dir,
-            batch_size=self.batch_size, data_num=self.test_data_num)
+            batch_size=self.batch_size, data_num=self.test_data_num, suffle=False)
         print('Test images loaded.')
 
     def __init_nets(self):
-        self.trimap_stage = SegNet(mode=self.mode).to(self.device).type(self.data_type)
+        self.trimap_stage = SegNet(mode=self.mode, activate=self.activate).to(self.device).type(self.data_type)
         self.matting_stage = DeepImageMatting(stage=1).to(self.device).type(self.data_type)
         self.matting_stage.load_state_dict(torch.load(self.matting_weight_path)['state_dict'], strict=True)
         self.matting_stage.eval()
@@ -153,9 +157,9 @@ class Trainer():
 
             for pile, fg, bg, alpha, trimap in self.test_dataloader:
                 if self.mode == 'combined':
-                    loss = self.__fit_combined(pile, fg, bg, alpha, calc_grad=True)
+                    loss = self.__fit_combined(pile, fg, bg, alpha, calc_grad=False)
                 elif self.mode == 'only_trimap':
-                    loss = self.__fit_trimap(pile, trimap, calc_grad=True)
+                    loss = self.__fit_trimap(pile, trimap, calc_grad=False)
                 else:
                     raise RuntimeError('wrong mode.')
 
@@ -164,7 +168,13 @@ class Trainer():
             self.test_loss.append(mean(epoch_test_loss))
 
             if self.is_file_saved:
-                save_line([self.train_loss, self.test_loss], title='loss_{:04d}'.format(epoch), output_dir=self.output_path)
+                self.writer.add_scalars('loss', {'train loss': self.train_loss[-1], 'test loss': self.test_loss[-1]}, epoch)
+
+                pred_alpha, pred_trimap = self.__prediction(pile.to(self.device).type(self.data_type), calc_grad=False)
+                self.writer.add_images('input image', pile, epoch)
+                self.writer.add_images('predicted trimap', pred_trimap, epoch)
+                self.writer.add_images('predicted alpha matte', pred_alpha, epoch)
+
                 with open(os.path.join(self.output_path, 'trimap_{:04d}.model'.format(epoch)), 'wb') as f:
                     cloudpickle.dump(self.trimap_stage, f)
                 # torch.save(self.trimap_stage.state_dict(), self.output_path + 'trimap_{:04d}.model'.format(epoch))

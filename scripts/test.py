@@ -3,7 +3,6 @@ import json
 import os
 
 from modules.trainer import Trainer
-from utils.argument_handler import argment_handler
 
 def test_main():
     config = json.load(open('config.json', 'r'))

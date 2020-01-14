@@ -90,6 +90,6 @@ class TrimapDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.piles[idx], self.fgs[idx], self.bgs[idx], self.alphas[idx], self.trimaps[idx]
 
-def get_dataloader(data_dir, bg_dir, data_num, batch_size=32, scale=80):
+def get_dataloader(data_dir, bg_dir, data_num, batch_size=32, scale=80, suffle=True):
     dataset = TrimapDataset(data_dir, bg_dir, data_num=data_num, scale=scale)
-    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=suffle)
