@@ -1,8 +1,8 @@
 {
-    "portrait_dir":   "./data/person_image_dataset/96x64/",
-    "bg_dir":         "./data/MSCOCO/test2017_mini/",
-    "matting_model":  "./models/stage1_sad_54.4.pth",
-    "output_path":    "./outputs/",
+    "portrait_dir":   "/home/hassaku/research/ambiguous-segmentation/data/aimattingcom_dataset/",
+    "bg_dir":         "/home/hassaku/research/ambiguous-segmentation/data/MSCOCO/test2017/",
+    "matting_model":  "/home/hassaku/research/ambiguous-segmentation/models/stage1_sad_54.4.pth",
+    "output_path":    "/home/hassaku/research/ambiguous-segmentation/outputs/",
     "epochs":         501,
     "batch_size":     10,
     "train_data_num": 100,

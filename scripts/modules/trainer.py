@@ -10,7 +10,7 @@ torch.manual_seed(0)
 
 from modules.loss import AlphaMatteLoss, AmbiguousLoss
 from modules.model import SegNet, DeepImageMatting
-from utils.data import get_dataloader
+from utils.data import get_dataloaders
 from utils.image import to_one_hot_trimap
 from utils.hard import get_device
 from utils.visualize import save_line
@@ -20,8 +20,7 @@ class Trainer():
         epochs, batch_size, train_data_num, test_data_num, mode, activate,
         is_file_saved=True):
 
-        self.train_dir = portrait_dir + 'train'
-        self.test_dir = portrait_dir + 'test'
+        self.portrait_dir = portrait_dir
         self.bg_dir = bg_dir
         self.matting_weight_path = matting_model
         self.output_path = output_path
@@ -38,7 +37,7 @@ class Trainer():
         self.__init_device()
         self.__init_dataloader()
         self.__init_nets()
-        self.__init_layers()
+        # self.__init_layers()
         self.__init_optim()
         self.__init_losses()
 
@@ -50,12 +49,12 @@ class Trainer():
             self.long_type = torch.LongTensor
 
     def __init_dataloader(self):
-        self.train_dataloader = get_dataloader(self.train_dir, self.bg_dir,
-            batch_size=self.batch_size, data_num=self.train_data_num)
-        print('Train images loaded.')
-        self.test_dataloader = get_dataloader(self.test_dir, self.bg_dir,
-            batch_size=self.batch_size, data_num=self.test_data_num, suffle=False)
-        print('Test images loaded.')
+        self.train_dataloader, self.test_dataloader = \
+            get_dataloaders(self.portrait_dir, self.bg_dir,
+                           batch_size=self.batch_size,
+                           train_num=self.train_data_num,
+                           test_num=self.test_data_num)
+        print('Dataset loaded.')
 
     def __init_nets(self):
         self.trimap_stage = SegNet(mode=self.mode, activate=self.activate).to(self.device).type(self.data_type)
@@ -64,20 +63,12 @@ class Trainer():
         self.matting_stage.eval()
         print('Model loaded.')
 
-    def __init_layers(self):
-        self.upsample = nn.UpsamplingBilinear2d(scale_factor=4)
-        self.maxpool = nn.MaxPool2d(4)
-
     def __init_optim(self):
-        for param in list(self.matting_stage.parameters()) + \
-            list(self.upsample.parameters()) + \
-            list(self.maxpool.parameters()):
+        for param in list(self.matting_stage.parameters()):
             param.requires_grad = False
 
         params = list(self.trimap_stage.parameters()) + \
-            list(self.upsample.parameters()) + \
-            list(self.matting_stage.parameters()) + \
-            list(self.maxpool.parameters())
+            list(self.matting_stage.parameters())
         self.optimizer = torch.optim.Adam(params)
 
     def __init_losses(self):
@@ -97,8 +88,8 @@ class Trainer():
 
         pred_trimap = self.trimap_stage(pile)
         concat = torch.cat((pile, pred_trimap), dim=1)
-        pred_alpha_big, _ = self.matting_stage(self.upsample(concat))
-        return self.maxpool(pred_alpha_big), pred_trimap
+        pred_alpha, _ = self.matting_stage(concat)
+        return pred_alpha, pred_trimap
 
     def __predict_trimap(self, pile, calc_grad=True):
         for param in list(self.trimap_stage.parameters()):

@@ -33,6 +33,7 @@ class SegNet(nn.Module):
         self.maxpool1d = nn.MaxPool1d(3, stride=2, return_indices=True)
 
     def forward(self, input):
+        _, _, w, h = input.shape
         x = self.maxpool2d(F.relu(self.dropout(self.conv1(input))))
         x = self.maxpool2d(F.relu(self.dropout(self.conv2(x))))
         x = self.maxpool2d(F.relu(self.dropout(self.conv3(x))))
@@ -41,7 +42,7 @@ class SegNet(nn.Module):
         x = F.relu(self.deconv1(self.upsample(x)))
         x = F.relu(self.deconv2(self.upsample(x)))
         x = F.relu(self.deconv3(self.upsample(x)))
-        x = self.deconv4(self.upsample(x))
+        x = F.relu(self.deconv4(self.upsample(x)))
         x = F.softmax(self.batch_norm(x), dim=1)
 
         if self.mode == 'combined':
@@ -56,12 +57,13 @@ class SegNet(nn.Module):
                 prob_hot = (one_hot * x).transpose(1, 2).view(output_shape)
 
             elif self.activate == 'thredhold':
-                prob_hot = (self.threshold1(x) + self.threshold2(x) + self.threshold3(x)) / 3
+                prob_hot = self.threshold2(x)
+                # prob_hot = (self.threshold1(x) + self.threshold2(x) + self.threshold3(x)) / 3
 
             consts = torch.Tensor(
-                np.mod(np.arange(input.shape[0] * 3 * 80 * 80), 3).reshape((-1, 80, 80, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
+                np.mod(np.arange(input.shape[0] * 3 * w * h), 3).reshape((-1, w, h, 3)).transpose(0, 3, 1, 2)).type(self.data_type) / 2
             x = torch.sum(prob_hot * consts, dim=1)
-            x = x.view(-1, 1, 80, 80)
+            x = x.view(-1, 1, w, h)
 
         return x
 
