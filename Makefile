@@ -3,6 +3,6 @@ build:
 run:
 	docker run -v `pwd`:/workspace -it ambiguous-segmentation
 train:
-	python main.py
+	python scripts/main.py
 test:
 	pytest scripts/test.py -s --pdb
