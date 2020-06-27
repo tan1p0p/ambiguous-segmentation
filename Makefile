@@ -1,6 +1,8 @@
 build:
 	docker build . -t ambiguous-segmentation
 run:
-	docker run -v /home/s1511526/ambiguous-segmentation:/workspace -it ambiguous-segmentation
+	docker run -v `pwd`:/workspace -it ambiguous-segmentation
+train:
+	python main.py
 test:
 	pytest scripts/test.py -s --pdb
